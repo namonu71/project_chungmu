@@ -4,7 +4,11 @@
 
 ## 바로가기
 
-**[웹 대시보드 열기](https://chungmu-order-operations.peppyagate1.chatgpt.site)**
+**[GitHub Pages 대시보드 열기](https://namonu71.github.io/project_chungmu/index.html)** — 로그인 없이 `index.html`로 접속합니다.
+
+GitHub Pages 버전은 가상 주문으로 시작하는 브라우저 체험판입니다. 검수·결과물 생성·송장 대조를 체험할 수 있으며, 데이터와 생성 파일은 이 브라우저에만 저장됩니다. [GitHub Pages 안내](pages/README.md)
+
+**[실제 업무용 웹앱 열기](https://chungmu-order-operations.peppyagate1.chatgpt.site)**
 
 웹사이트는 본인 전용 비공개로 배포되어 있으며, 사이트 소유자의 ChatGPT 계정으로 로그인합니다. 첫 화면은 개인정보가 없는 가상 주문 12건으로 구성됩니다. 실제 업무 공간은 데모와 별도로 저장합니다.
 
