@@ -21,7 +21,7 @@ const aliases={
 const lookup=Object.fromEntries(Object.entries(aliases).flatMap(([k,a])=>a.map(v=>[norm(v),k])));
 export const defaultProfile={carrier:'CJ대한통운',validated:false,validation_note:'',shipping_columns:[['수취인','recipient'],['휴대폰','phone'],['전화','phone'],['주소','address'],['상품명','product'],['수량','quantity'],['배송메시지','message'],['쇼핑몰_사업자','channel_account'],['송하인','sender_name'],['송하인주소','sender_address'],['송하인휴대폰','sender_phone'],['송하인전화','sender_phone'],['공란','blank'],['사방넷주문번호','number']],tracking_columns:[['ID','account'],['쇼핑몰','channel'],['사방넷주문번호','number'],['택배사','carrier'],['송장번호','tracking']]};
 const fields=new Set(['recipient','phone','address','product','quantity','message','channel_account','sender_name','sender_address','sender_phone','blank','number','reference','account','channel','carrier','tracking']);
-export const newState=()=>({settings:{profile:clone(defaultProfile),mappings:[],senders:[]},batches:[],orders:[],shipments:[],artifacts:[],imports:[],tracking_rows:[],events:[]});
+export const newState=()=>({settings:{profile:clone(defaultProfile),mappings:[],senders:[]},batches:[],orders:[],shipments:[],artifacts:[],imports:[],attachments:[],tracking_rows:[],events:[]});
 
 export function readWorkbook(bytes,kind='orders'){
  assert(bytes.length<=8*1024*1024,'웹 버전은 8MB 이하 XLSX 파일을 지원합니다.');
@@ -56,6 +56,12 @@ export function workbook(headers,rows,title='목록'){
 
 export class Operations{
  constructor(state){this.s=state;this.files=new Map();}
+ addAttachment(name,mime,bytes,batchId='',orderId='',note=''){
+  assert(name&&name.length<=180,'파일명을 확인하세요.');assert(bytes.length<=10*1024*1024,'첨부 파일은 10MB 이하만 가능합니다.');
+  assert(/^(image\/(jpeg|png|webp|gif)|text\/(plain|csv)|application\/pdf|application\/vnd.openxmlformats-officedocument.spreadsheetml.sheet)$/.test(mime),'이미지, TXT, CSV, PDF, XLSX만 첨부할 수 있습니다.');
+  assert(!batchId||this.s.batches.some(x=>x.id===batchId),'연결할 배치를 찾을 수 없습니다.');assert(!orderId||this.s.orders.some(x=>x.id===orderId),'연결할 주문을 찾을 수 없습니다.');
+  const id=uid('A-');this.files.set('attachments/'+id,{bytes,mime});const item={id,name,mime,size:bytes.length,batch_id:batchId,order_id:orderId,note:clean(note).slice(0,500),created:now()};this.s.attachments??=[];this.s.attachments.push(item);this.event(orderId||null,batchId||null,'자료 첨부 등록',{파일:name,유형:mime});return {id};
+ }
  event(order_id,batch_id,action,detail){this.s.events.push({id:uid('E-'),order_id,batch_id,action,detail:JSON.stringify(detail),created:now()});}
  settings(data){
   assert(data&&data.profile&&Array.isArray(data.mappings)&&Array.isArray(data.senders),'기준정보 구조를 확인하세요.');const p=data.profile;

@@ -1,5 +1,5 @@
 import { newState, Operations, UserError } from './operations.mjs';
-const kinds=['batches','orders','shipments','artifacts','imports','tracking_rows','events','backups'];
+const kinds=['batches','orders','shipments','artifacts','imports','attachments','tracking_rows','events','backups'];
 function flat(state){const out=new Map([['settings:main',{kind:'settings',id:'main',payload:JSON.stringify(state.settings)}]]);for(const k of kinds)for(const item of state[k]||[])out.set(k+':'+item.id,{kind:k,id:item.id,payload:JSON.stringify(item)});return out;}
 
 export async function load(env,workspace){
@@ -16,7 +16,7 @@ export async function mutate(env,workspace,operation){
   const {state,revision}=await load(env,workspace),before=flat(state),op=new Operations(state),result=await operation(op),after=flat(state),changes=[...after].filter(([k,v])=>before.get(k)?.payload!==v.payload).map(([,v])=>v);
   if(!changes.length&&!op.files.size)return result;const keys=[];
   try{
-   for(const [key,bytes] of op.files){const full=workspace+'/'+key;await env.BUCKET.put(full,bytes,{httpMetadata:{contentType:key.endsWith('.zip')?'application/zip':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}});keys.push(full);}
+   for(const [key,value] of op.files){const full=workspace+'/'+key,bytes=value?.bytes||value,mime=value?.mime||(key.endsWith('.zip')?'application/zip':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');await env.BUCKET.put(full,bytes,{httpMetadata:{contentType:mime}});keys.push(full);}
    const statements=[];for(let i=0;i<changes.length;i+=75)statements.push(env.DB.prepare(`INSERT OR REPLACE INTO workspace_records(workspace,kind,id,payload) SELECT ?,json_extract(value,'$.kind'),json_extract(value,'$.id'),json_extract(value,'$.payload') FROM json_each(?) WHERE EXISTS(SELECT 1 FROM workspace_revisions WHERE workspace=? AND revision=?)`).bind(workspace,JSON.stringify(changes.slice(i,i+75)),workspace,revision));
    statements.push(env.DB.prepare('UPDATE workspace_revisions SET revision=revision+1 WHERE workspace=? AND revision=?').bind(workspace,revision));const response=await env.DB.batch(statements);if(response.at(-1).meta.changes===1)return result;for(const key of keys)await env.BUCKET.delete(key);
   }catch(error){for(const key of keys)try{await env.BUCKET.delete(key);}catch{}throw error;}
@@ -25,5 +25,5 @@ export async function mutate(env,workspace,operation){
 }
 
 export async function fileObject(env,workspace,id){
- const {state}=await load(env,workspace),file=state.artifacts.find(a=>a.id===id)||state.backups.find(b=>b.id===id);if(!file)throw new UserError('파일을 찾을 수 없습니다.');const key=file.kind==='backup'?'backups/'+id+'.zip':'artifacts/'+id+'.xlsx',object=await env.BUCKET.get(workspace+'/'+key);if(!object)throw new UserError('저장된 파일이 없습니다.');return {file,object};
+ const {state}=await load(env,workspace),attachment=(state.attachments||[]).find(a=>a.id===id),file=attachment||state.artifacts.find(a=>a.id===id)||state.backups.find(b=>b.id===id);if(!file)throw new UserError('파일을 찾을 수 없습니다.');const key=attachment?'attachments/'+id:file.kind==='backup'?'backups/'+id+'.zip':'artifacts/'+id+'.xlsx',object=await env.BUCKET.get(workspace+'/'+key);if(!object)throw new UserError('저장된 파일이 없습니다.');return {file,object};
 }

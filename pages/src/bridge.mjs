@@ -19,6 +19,7 @@ async function execute(path,body){
  let result;
  if(path==='/api/demo'){result=await seedDemo(op);}
  else if(path==='/api/import-orders'){const data=bytes(body);result=op.importOrders(data,body.name,body.account||'',body.day||'',body.period||'',await digest(data));}
+ else if(path==='/api/attachments'){const raw=atob(body.file);const data=Uint8Array.from(raw,c=>c.charCodeAt(0));result=op.addAttachment(body.name,body.mime,data,body.batch_id||'',body.order_id||'',body.note||'');}
  else if(path==='/api/settings')result=op.settings(body);
  else if(path==='/api/order')result=op.updateOrder(body.id,body);
  else if(path==='/api/review-batch')result=op.reviewBatch(body.batch_id,body.note);
