@@ -1,0 +1,10 @@
+{
+  "orders": 1000,
+  "units": 2000,
+  "import_seconds": 0.346,
+  "batch_review_seconds": 0.119,
+  "generate_4_files_seconds": 0.713,
+  "dashboard_seconds": 0.098,
+  "sample": "가상 단일품목 1000주문",
+  "note": "이 PC의 실측 기록이며 운영 성능 보증값 아님"
+}

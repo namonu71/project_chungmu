@@ -1,0 +1,121 @@
+{
+  "profile": {
+    "carrier": "CJ대한통운",
+    "validated": false,
+    "validation_note": "",
+    "shipping_columns": [
+      [
+        "수취인",
+        "recipient"
+      ],
+      [
+        "휴대폰",
+        "phone"
+      ],
+      [
+        "전화",
+        "phone"
+      ],
+      [
+        "주소",
+        "address"
+      ],
+      [
+        "상품명",
+        "product"
+      ],
+      [
+        "수량",
+        "quantity"
+      ],
+      [
+        "배송메시지",
+        "message"
+      ],
+      [
+        "쇼핑몰_사업자",
+        "channel_account"
+      ],
+      [
+        "송하인",
+        "sender_name"
+      ],
+      [
+        "송하인주소",
+        "sender_address"
+      ],
+      [
+        "송하인휴대폰",
+        "sender_phone"
+      ],
+      [
+        "송하인전화",
+        "sender_phone"
+      ],
+      [
+        "공란",
+        "blank"
+      ],
+      [
+        "사방넷주문번호",
+        "number"
+      ]
+    ],
+    "tracking_columns": [
+      [
+        "ID",
+        "account"
+      ],
+      [
+        "쇼핑몰",
+        "channel"
+      ],
+      [
+        "사방넷주문번호",
+        "number"
+      ],
+      [
+        "택배사",
+        "carrier"
+      ],
+      [
+        "송장번호",
+        "tracking"
+      ]
+    ]
+  },
+  "mappings": [
+    {
+      "account": "데모사업자",
+      "channel": "*",
+      "sku": "DEMO-200-W",
+      "option": "화이트",
+      "internal_code": "T200-W",
+      "product": "호텔타올 200g",
+      "color": "화이트",
+      "multiplier": 1,
+      "max_units": 20,
+      "processing": false
+    },
+    {
+      "account": "데모사업자",
+      "channel": "*",
+      "sku": "DEMO-170-G",
+      "option": "그레이",
+      "internal_code": "T170-G",
+      "product": "데일리타올 170g",
+      "color": "그레이",
+      "multiplier": 1,
+      "max_units": 25,
+      "processing": false
+    }
+  ],
+  "senders": [
+    {
+      "account": "데모사업자",
+      "name": "충무 데모",
+      "phone": "01000000000",
+      "address": "대전광역시 데모구 샘플로 1"
+    }
+  ]
+}

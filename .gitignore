@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+# Internal source documents and customer/business records stay local.
+row데이터/
+분석자료/
+업무데이터/
+보고서/
+.env
+.env.*
+!.env.example
+.venv/
+*.log
+node_modules/
+dist/
+.next/
+.wrangler/
+.sites-runtime/
+outputs/
+*.sqlite3
+*.sqlite3-*
+# Internal analysis and process documents are not public source documentation.
+프로젝트_파악_정리.md
+자동화_MVP_구현계획.md
+웹배포_안내.md

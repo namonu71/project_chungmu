@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="local-token" content="__TOKEN__">
+  <title>충무 | 주문 운영 대시보드</title>
+  <link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="충무 운영 홈"><span class="brand-mark">C</span><span>충무<span class="brand-sub">OPERATIONS</span></span></a>
+    <div class="nav-label">업무 공간</div>
+    <nav aria-label="주요 메뉴">
+      <button class="nav-item active" data-view="dashboard"><span>◫</span> 운영 대시보드</button>
+      <button class="nav-item" data-view="orders"><span>≡</span> 주문별 진행 현황 <b id="nav-order-count">0</b></button>
+      <button class="nav-item" data-view="batches"><span>▤</span> 입력 배치</button>
+      <button class="nav-item" data-view="tracking"><span>⇄</span> 송장 대조 <b id="nav-hold-count">0</b></button>
+      <button class="nav-item" data-view="files"><span>▱</span> 생성 결과물</button>
+      <div class="nav-rule"></div>
+      <button class="nav-item" data-view="settings"><span>⚙</span> 기준정보 · 양식</button>
+    </nav>
+    <div class="sidebar-bottom">
+      <span class="local-indicator"></span> PC 로컬 작업 공간
+      <p>외부 접수·반영은 담당자가 확인합니다.</p>
+      <button class="ghost light" data-action="backup">업무 데이터 백업</button>
+    </div>
+  </aside>
+  <main>
+    <header class="topbar">
+      <div><span class="crumb">업무 자동화</span><span class="crumb-divider">/</span><span id="breadcrumb">운영 대시보드</span></div>
+      <div class="top-actions"><label class="operator">작업자 <input id="operator" placeholder="이름 입력" maxlength="50" aria-label="작업자 이름"></label><span class="workspace-label" id="workspace-label">실제 업무</span><button class="ghost" id="workspace-toggle" data-action="demo">데모 보기</button></div>
+    </header>
+    <section id="workspace-banner" hidden class="demo-banner">가상 데이터로 보는 데모입니다. 실제 주문·접수·출고와 연결되지 않습니다. <button data-action="live">실제 업무로 돌아가기 →</button></section>
+    <div class="page">
+      <div class="page-heading"><div><div class="eyebrow">CHUNGMU ORDER OPERATIONS</div><h1 id="page-title">운영 대시보드</h1><p id="page-description">주문이 어디까지 진행됐는지, 어떤 결과물이 만들어졌는지 확인하세요.</p></div><div class="heading-actions"><button class="ghost" data-action="refresh">↻ 새로고침</button><button class="primary" data-action="upload">＋ 주문 파일 입력</button></div></div>
+      <div id="content" aria-live="polite"><div class="empty">업무 데이터를 불러오고 있습니다.</div></div>
+      <footer class="page-footer"><span>파일 생성과 외부 접수·송신·실제 출고는 별도 상태로 관리합니다.</span><span id="last-updated"></span></footer>
+    </div>
+  </main>
+  <dialog id="upload-dialog"><form id="upload-form"><div class="dialog-heading"><div><div class="eyebrow">NEW BATCH</div><h2>주문 파일 입력</h2></div><button type="button" class="icon-button" data-close="upload-dialog" aria-label="닫기">×</button></div><p class="muted">사업자별 XLSX 원본을 넣으세요. 입력 양식과 원본 파일을 보존합니다.</p><div class="form-grid"><label>사업자 / 계정<input name="account" required maxlength="100" placeholder="원본 ID 또는 사업자"></label><label>기준일<input name="day" type="date" required></label><label>시간대<select name="period"><option>오전</option><option>오후</option><option>추가</option></select></label></div><label class="file-zone">주문 엑셀 선택 <span>XLSX · 최대 20MB</span><input name="file" type="file" accept=".xlsx" required></label><div class="inline-links"><a href="/api/templates/orders">빈 입력 양식 ↓</a><a href="/api/templates/demo_orders">가상 주문 샘플 ↓</a></div><div class="dialog-footer"><button type="button" class="ghost" data-close="upload-dialog">취소</button><button class="primary" type="submit">입력하고 검수하기</button></div><p class="form-error" role="alert"></p></form></dialog>
+  <dialog id="action-dialog"><form id="action-form"><div class="dialog-heading"><h2 id="action-title">작업 확인</h2><button type="button" class="icon-button" data-close="action-dialog" aria-label="닫기">×</button></div><p id="action-description" class="muted"></p><div id="action-extra"></div><label>확인 내용 / 처리 사유<textarea name="note" required rows="3" placeholder="검수 내용 또는 외부 처리 근거를 기록하세요."></textarea></label><div class="dialog-footer"><button type="button" class="ghost" data-close="action-dialog">취소</button><button class="primary" type="submit" id="action-submit">확인하고 기록</button></div><p class="form-error" role="alert"></p></form></dialog>
+  <dialog id="tracking-dialog"><form id="tracking-form"><div class="dialog-heading"><h2>송장 결과파일 입력</h2><button type="button" class="icon-button" data-close="tracking-dialog" aria-label="닫기">×</button></div><label>대상 배치<select name="batch_id" required></select></label><label class="file-zone">송장 결과 XLSX<input name="file" type="file" accept=".xlsx" required></label><p class="muted">배송 참조키·주문번호로 대조합니다. 식별자가 없으면 직접 연결 대상으로 남습니다.</p><a href="/api/templates/tracking">송장 결과 입력 양식 ↓</a><div class="dialog-footer"><button type="button" class="ghost" data-close="tracking-dialog">취소</button><button class="primary">입력하고 대조하기</button></div><p class="form-error" role="alert"></p></form></dialog>
+  <dialog id="order-dialog" class="order-dialog"><div id="order-detail"></div></dialog>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>
