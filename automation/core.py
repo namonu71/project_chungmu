@@ -1,6 +1,7 @@
 """Local, file-based order operations. No remote system writes."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -174,12 +175,16 @@ DEFAULT_PROFILE = {
 EXPORT_FIELDS = {"recipient", "phone", "address", "product", "quantity", "message", "channel_account", "sender_name", "sender_address", "sender_phone", "blank", "number", "reference", "account", "channel", "carrier", "tracking"}
 
 
+ATTACHMENT_TYPES={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","text/plain":".txt","text/csv":".csv"}
+
+
 class Store:
     def __init__(self, root):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root/"originals").mkdir(exist_ok=True)
         (self.root/"artifacts").mkdir(exist_ok=True)
+        (self.root/"attachments").mkdir(exist_ok=True)
         with self.db() as db:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -193,6 +198,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,order_id TEXT,batch_id TEXT,action TEXT,detail TEXT,created TEXT);
             CREATE TABLE IF NOT EXISTS imports(id TEXT PRIMARY KEY,batch_id TEXT,name TEXT,created TEXT,hash TEXT);
             CREATE TABLE IF NOT EXISTS tracking_rows(id TEXT PRIMARY KEY,import_id TEXT,payload TEXT,status TEXT,issue TEXT,shipment_id TEXT);
+            CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY,batch_id TEXT,order_id TEXT,name TEXT,mime TEXT,size INTEGER,note TEXT,created TEXT);
             """)
             db.execute("INSERT OR IGNORE INTO settings VALUES('profile',?)", (dumps(DEFAULT_PROFILE),))
             db.execute("INSERT OR IGNORE INTO settings VALUES('mappings','[]')")
@@ -266,12 +272,12 @@ class Store:
             self.event(db,None,None,"기준정보 변경",{"상품수":len(data["mappings"]),"택배사":profile["carrier"]})
         return {"ok":True}
 
-    def import_orders(self, blob, name, account, day, period):
+    def import_orders(self, blob, name, account, day, period, digest=None):
         if not clean(account) or len(account)>100: raise UserError("사업자/계정을 입력하세요.")
         try: datetime.strptime(day,"%Y-%m-%d")
         except ValueError: raise UserError("기준일을 확인하세요.")
         if period not in ["오전","오후","추가"]: raise UserError("시간대를 선택하세요.")
-        digest=hashlib.sha256(blob).hexdigest()
+        digest=digest or hashlib.sha256(blob).hexdigest()
         rows,meta=read_xlsx(blob)
         grouped=defaultdict(list)
         for row in rows:
@@ -311,6 +317,53 @@ class Store:
                 db.execute("INSERT OR IGNORE INTO batch_orders VALUES(?,?)",(bid,oid))
             (self.root/"originals"/(bid+".xlsx")).write_bytes(blob)
         return {"batch_id":bid,"duplicate":False,"orders":len(grouped)}
+
+    def import_extracted(self, headers, rows, name, account, day, period, source=None):
+        """Orders transcribed from an image/text/CSV and reviewed on screen.
+
+        The reviewed rows become an ordinary order workbook, so the same header
+        recognition, validation, duplicate and revision rules as XLSX apply.
+        """
+        if not isinstance(headers,list) or not 1<=len(headers)<=40 or not all(isinstance(h,str) and 0<len(h)<=40 for h in headers):
+            raise UserError("추출 결과의 열 구성을 확인하세요.")
+        if not isinstance(rows,list) or not 1<=len(rows)<=3000:
+            raise UserError("추출된 주문 행은 1~3,000행이어야 합니다.")
+        table=[]
+        for index,row in enumerate(rows,1):
+            if not isinstance(row,list) or len(row)!=len(headers):raise UserError(f"{index}번째 행의 열 수가 맞지 않습니다.")
+            cells=[clean(v) for v in row]
+            if any(len(v)>500 for v in cells):raise UserError(f"{index}번째 행에 500자를 넘는 값이 있습니다.")
+            if any(cells):table.append(cells)
+        if not table:raise UserError("입력할 주문 행이 없습니다.")
+        mime=extension=None;data=b""
+        if source:
+            mime=clean(source.get("mime"))
+            extension=ATTACHMENT_TYPES.get(mime)
+            if not extension:raise UserError("원본 자료는 이미지(JPG·PNG·WEBP), TXT, CSV만 지원합니다.")
+            try:data=base64.b64decode(source.get("file",""),validate=True)
+            except Exception as exc:raise UserError("원본 자료를 읽지 못했습니다.") from exc
+            if not 0<len(data)<=10*1024*1024:raise UserError("원본 자료는 10MB 이하만 보관할 수 있습니다.")
+        # Same reviewed content means the same input, regardless of workbook timestamps.
+        digest="extracted:"+hashlib.sha256(dumps([headers,table]).encode("utf-8")).hexdigest()
+        result=self.import_orders(workbook_bytes(headers,table,"주문입력"),name,account,day,period,digest)
+        if result["duplicate"] or not source:return result
+        aid=uid("A-");bid=result["batch_id"];source_name=Path(clean(source.get("name")) or "원본자료").name[:180]
+        with self.db() as db:
+            (self.root/"attachments"/(aid+extension)).write_bytes(data)
+            db.execute("INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?)",(aid,bid,None,source_name,mime,len(data),"주문 추출 원본",now()))
+            meta=json.loads(db.execute("SELECT metadata FROM batches WHERE id=?",(bid,)).fetchone()["metadata"])
+            meta.update({"extracted":True,"source":{"id":aid,"name":source_name,"mime":mime}})
+            db.execute("UPDATE batches SET metadata=? WHERE id=?",(dumps(meta),bid))
+            self.event(db,None,bid,"원본 자료 보관",{"파일":source_name,"유형":mime})
+        return result
+
+    def attachment_file(self,aid):
+        with self.db() as db:
+            row=db.execute("SELECT * FROM attachments WHERE id=?",(aid,)).fetchone()
+        if not row:raise UserError("파일이 없습니다.")
+        path=(self.root/"attachments"/(row["id"]+ATTACHMENT_TYPES.get(row["mime"],""))).resolve()
+        if not path.is_relative_to(self.root/"attachments") or not path.exists():raise UserError("파일을 찾을 수 없습니다. 백업을 확인하세요.")
+        return path,row["name"],row["mime"]
 
     def evaluate(self, order, settings, shipment=None):
         order=dict(order)
@@ -666,5 +719,7 @@ class Store:
                 z.write(snapshot,"operations.sqlite3")
                 for directory in ["originals","artifacts"]:
                     for file in (self.root/directory).glob("*.xlsx"):z.write(file,file.relative_to(self.root).as_posix())
+                for file in (self.root/"attachments").glob("A-*"):
+                    if file.suffix in ATTACHMENT_TYPES.values():z.write(file,file.relative_to(self.root).as_posix())
         snapshot.unlink(missing_ok=True)
         return target

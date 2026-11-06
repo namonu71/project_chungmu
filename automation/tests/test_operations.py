@@ -232,5 +232,34 @@ class OperationsTests(unittest.TestCase):
             self.assertTrue(restored.artifact_file(aid)[0].is_relative_to(restored.root))
             with self.assertRaises(UserError):restore(backup,restored.root)
 
+    def extracted_rows(self,number='IMG-001',quantity='3'):
+        return [['데모사업자','스마트스토어',number,'','DEMO-200-W','호텔타올','화이트',quantity,'가상고객','010-0000-0000','대전 샘플로 1','','']]
+
+    def test_extracted_image_rows_follow_same_workflow(self):
+        import base64
+        source={'name':'주문사진.png','mime':'image/png','file':base64.b64encode(b'\x89PNG fake image').decode()}
+        result=self.store.import_extracted(ORDER_HEADERS,self.extracted_rows(),'주문사진.png','데모사업자','2026-11-06','오전',source)
+        self.assertFalse(result['duplicate']);self.assertEqual(result['orders'],1)
+        batch=self.store.dashboard()['batches'][0]
+        self.assertTrue(batch['metadata']['extracted']);aid=batch['metadata']['source']['id']
+        path,name,mime=self.store.attachment_file(aid)
+        self.assertEqual((path.read_bytes(),name,mime),(b'\x89PNG fake image','주문사진.png','image/png'))
+        # Same reviewed content is a duplicate input even though the workbook is regenerated.
+        again=self.store.import_extracted(ORDER_HEADERS,self.extracted_rows(),'주문사진.png','데모사업자','2026-11-06','오전',source)
+        self.assertEqual((again['duplicate'],again['batch_id']),(True,result['batch_id']))
+        self.review();generated=self.store.generate(result['batch_id'],'추출 주문 확인')
+        self.assertEqual(len(generated['artifacts']),4)
+        backup=self.store.backup()
+        with zipfile.ZipFile(backup) as z:self.assertIn(f'attachments/{aid}.png',z.namelist())
+
+    def test_extracted_rows_are_validated(self):
+        with self.assertRaises(UserError):self.store.import_extracted(ORDER_HEADERS,[],'a.txt','데모사업자','2026-11-06','오전')
+        with self.assertRaises(UserError):self.store.import_extracted(ORDER_HEADERS,[['x']],'a.txt','데모사업자','2026-11-06','오전')
+        with self.assertRaises(UserError):self.store.import_extracted(ORDER_HEADERS,self.extracted_rows(number=''),'a.txt','데모사업자','2026-11-06','오전')
+        with self.assertRaises(UserError):self.store.import_extracted(ORDER_HEADERS,self.extracted_rows(),'a.pdf','데모사업자','2026-11-06','오전',{'name':'a.pdf','mime':'application/pdf','file':'AAAA'})
+        # Formula-looking text stays text and the order is held for the invalid quantity.
+        self.store.import_extracted(ORDER_HEADERS,self.extracted_rows(quantity='=1+2'),'a.txt','데모사업자','2026-11-06','오전')
+        self.assertIn('수량은 양의 정수여야 함',self.first()['issues'])
+
 
 if __name__=='__main__':unittest.main()

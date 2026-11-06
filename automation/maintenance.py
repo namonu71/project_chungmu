@@ -3,7 +3,7 @@ import argparse
 import sqlite3
 import zipfile
 from pathlib import Path
-from .core import Store, UserError
+from .core import ATTACHMENT_TYPES, Store, UserError
 
 
 def restore(archive,destination):
@@ -15,7 +15,7 @@ def restore(archive,destination):
         if 'operations.sqlite3' not in names:raise UserError('업무 DB가 없는 백업입니다.')
         for info in z.infolist():
             target=(destination/info.filename).resolve()
-            allowed=info.filename=='operations.sqlite3' or (info.filename.startswith(('originals/','artifacts/')) and info.filename.endswith('.xlsx'))
+            allowed=info.filename=='operations.sqlite3' or (info.filename.startswith(('originals/','artifacts/')) and info.filename.endswith('.xlsx')) or (info.filename.startswith('attachments/A-') and info.filename.endswith(tuple(ATTACHMENT_TYPES.values())))
             if not target.is_relative_to(destination) or not allowed or (info.external_attr>>16)&0o170000==0o120000:
                 raise UserError('지원하지 않는 백업 경로입니다.')
         destination.mkdir(parents=True,exist_ok=True)

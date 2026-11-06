@@ -1,4 +1,4 @@
-import {Operations,newState,seedDemo,template,digest,UserError} from '../../web/lib/operations.mjs';
+import {Operations,newState,seedDemo,template,digest,UserError,extractedDigest} from '../../web/lib/operations.mjs';
 import {zipSync,strToU8} from 'fflate';
 
 const LIVE='https://chungmu-order-operations.peppyagate1.chatgpt.site';
@@ -8,7 +8,8 @@ let db,queue=Promise.resolve();
 function openDB(){return new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,1);request.onupgradeneeded=()=>request.result.createObjectStore('records');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(new Error('브라우저 저장소를 사용할 수 없습니다. 비공개 모드 설정을 확인하세요.'));});}
 function read(key){return new Promise((resolve,reject)=>{const tx=db.transaction('records','readonly'),req=tx.objectStore('records').get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
 function commit(state,files){return new Promise((resolve,reject)=>{const tx=db.transaction('records','readwrite'),store=tx.objectStore('records');store.put(state,'state');for(const [key,bytes] of files)store.put(bytes,key);tx.oncomplete=resolve;tx.onerror=()=>reject(new Error('브라우저 저장 공간이 부족하거나 저장하지 못했습니다.'));tx.onabort=()=>reject(new Error('저장 작업을 완료하지 못했습니다.'));});}
-async function cacheFiles(state){for(const a of [...state.artifacts,...(state.backups||[])])if(!urls.has(a.id)){const bytes=await read((a.kind==='backup'?'backups/':'artifacts/')+a.id+(a.kind==='backup'?'.zip':'.xlsx'));if(bytes)urls.set(a.id,URL.createObjectURL(new Blob([bytes],{type:a.kind==='backup'?'application/zip':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})));}}
+async function cacheFiles(state){for(const a of state.attachments||[])if(!urls.has(a.id)){const v=await read('attachments/'+a.id);if(v)urls.set(a.id,URL.createObjectURL(new Blob([v.bytes||v],{type:a.mime})));}
+ for(const a of [...state.artifacts,...(state.backups||[])])if(!urls.has(a.id)){const bytes=await read((a.kind==='backup'?'backups/':'artifacts/')+a.id+(a.kind==='backup'?'.zip':'.xlsx'));if(bytes)urls.set(a.id,URL.createObjectURL(new Blob([bytes],{type:a.kind==='backup'?'application/zip':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})));}}
 function bytes(body){if(!body.name?.toLowerCase().endsWith('.xlsx'))throw new UserError('XLSX 파일만 지원합니다.');let raw;try{raw=atob(body.file);}catch{throw new UserError('파일 내용을 읽지 못했습니다.');}if(raw.length>8*1024*1024)throw new UserError('8MB 이하 XLSX를 사용하세요.');return Uint8Array.from(raw,c=>c.charCodeAt(0));}
 
 const ready=(async()=>{db=await openDB();let state=await read('state');if(!state){state=newState();state.backups=[];const op=new Operations(state);await seedDemo(op);await commit(state,op.files);}await cacheFiles(state);})();
@@ -19,6 +20,7 @@ async function execute(path,body){
  let result;
  if(path==='/api/demo'){result=await seedDemo(op);}
  else if(path==='/api/import-orders'){const data=bytes(body);result=op.importOrders(data,body.name,body.account||'',body.day||'',body.period||'',await digest(data));}
+ else if(path==='/api/import-extracted'){let src=null;if(body.source){let raw;try{raw=atob(body.source.file);}catch{throw new UserError('원본 자료를 읽지 못했습니다.');}if(raw.length>8*1024*1024)throw new UserError('원본 자료는 8MB 이하만 보관할 수 있습니다.');src={name:String(body.source.name||'원본자료').split(/[\\/]/).pop().slice(0,180),mime:body.source.mime,bytes:Uint8Array.from(raw,c=>c.charCodeAt(0))};}result=op.importExtracted(body.headers,body.rows,body.name,body.account||'',body.day||'',body.period||'',await extractedDigest(body.headers||[],Array.isArray(body.rows)?body.rows:[]),src);}
  else if(path==='/api/attachments'){const raw=atob(body.file);const data=Uint8Array.from(raw,c=>c.charCodeAt(0));result=op.addAttachment(body.name,body.mime,data,body.batch_id||'',body.order_id||'',body.note||'');}
  else if(path==='/api/settings')result=op.settings(body);
  else if(path==='/api/order')result=op.updateOrder(body.id,body);
@@ -29,7 +31,7 @@ async function execute(path,body){
  else if(path==='/api/export-tracking')result=op.exportTracking(body.batch_id,body.note);
  else if(path==='/api/backup'){
   const id='Z-'+crypto.randomUUID().slice(0,12),archive={'workspace.json':strToU8(JSON.stringify(state,null,2))};let size=0;
-  for(const key of [...state.batches.map(b=>'originals/'+b.id+'.xlsx'),...state.imports.map(i=>'originals/'+i.id+'.xlsx'),...state.artifacts.map(a=>'artifacts/'+a.id+'.xlsx')]){const data=await read(key);if(data){size+=data.byteLength;if(size>30*1024*1024)throw new UserError('백업 크기가 30MB를 넘습니다. 결과물을 개별 다운로드하세요.');archive[key]=data;}}
+  for(const key of [...state.batches.map(b=>'originals/'+b.id+'.xlsx'),...state.imports.map(i=>'originals/'+i.id+'.xlsx'),...state.artifacts.map(a=>'artifacts/'+a.id+'.xlsx'),...(state.attachments||[]).map(a=>'attachments/'+a.id)]){let data=await read(key);if(data?.bytes)data=data.bytes;if(data){size+=data.byteLength;if(size>30*1024*1024)throw new UserError('백업 크기가 30MB를 넘습니다. 결과물을 개별 다운로드하세요.');archive[key]=data;}}
   const name='충무_GitHubPages_체험백업_'+new Date().toISOString().slice(0,10)+'.zip';op.files.set('backups/'+id+'.zip',zipSync(archive));state.backups||=[];state.backups.push({id,kind:'backup',name,created:new Date().toISOString()});result={ok:true,path:'브라우저 체험 데이터 백업',download_id:id,name};
  }else throw new UserError('지원하지 않는 작업입니다.');
  await commit(state,op.files);await cacheFiles(state);if(result.download_id)result.download=urls.get(result.download_id);return result;

@@ -10,13 +10,15 @@ const {build}=req('esbuild');
 await mkdir(path.join(root,'pages/assets'),{recursive:true});
 let html=await readFile(path.join(root,'automation/static/index.html'),'utf8');
 html=html.replace('__TOKEN__','github-pages-demo').replace('<title>충무 | 주문 운영 대시보드</title>','<title>충무 프로젝트 | GitHub Pages 대시보드</title>')
- .replace('href="/styles.css"','href="./pages/assets/dashboard.css"').replace('src="/app.js"','src="./pages/assets/dashboard.js"').replace('href="/"','href="./index.html"')
+ .replace('href="/styles.css"','href="./pages/assets/dashboard.css"').replace('src="/app.js"','src="./pages/assets/dashboard.js"').replace('<script src="/extract.js" defer></script>','').replace('href="/"','href="./index.html"')
  .replace('PC 로컬 작업 공간','GitHub Pages 체험 공간').replace('업무 데이터 백업','체험 데이터 백업').replace('XLSX · 최대 20MB','XLSX · 최대 8MB')
  .replace('가상 데이터로 보는 데모입니다. 실제 주문·접수·출고와 연결되지 않습니다.','GitHub Pages 체험판 · 가상 데이터로 시작하며, 변경 내용은 이 브라우저에만 저장됩니다.')
  .replace('실제 업무로 돌아가기 →','실제 업무용 웹앱 열기 ↗');
 await writeFile(path.join(root,'index.html'),html);
 await writeFile(path.join(root,'.nojekyll'),'');
 let client=await readFile(path.join(root,'automation/static/app.js'),'utf8');
+// Image/text order extraction shares app.js globals; bundle it in the same module scope.
+client+='\n'+await readFile(path.join(root,'automation/static/extract.js'),'utf8');
 const start=client.indexOf('async function api('),end=client.indexOf('\nfunction toast',start);
 if(start<0||end<0)throw new Error('Client API integration point missing');
 client=client.slice(0,start)+'async function api(path,body){return pagesApi.request(path,body);}\n'+client.slice(end);

@@ -1,4 +1,4 @@
-import { Operations, UserError, digest, template, seedDemo } from './operations.mjs';
+import { Operations, UserError, digest, template, seedDemo, extractedDigest } from './operations.mjs';
 import { load, mutate, fileObject } from './storage.mjs';
 import { zipSync, strToU8 } from 'fflate';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
@@ -22,12 +22,13 @@ export async function handle(request,env){
   const file=()=>{if(!body.name?.toLowerCase().endsWith('.xlsx'))throw new UserError('XLSX 파일만 지원합니다.');return base64Bytes(body.file);};
   if(path==='/api/demo')return json(await mutate(env,'demo',seedDemo));
   if(path==='/api/backup')return json(await mutate(env,workspace,async op=>{
-   const id='Z-'+crypto.randomUUID().replaceAll('-','').slice(0,12),archive={'workspace.json':strToU8(JSON.stringify(op.s,null,2))};let size=0;const keys=[...op.s.batches.map(b=>'originals/'+b.id+'.xlsx'),...op.s.imports.map(i=>'originals/'+i.id+'.xlsx'),...op.s.artifacts.map(a=>'artifacts/'+a.id+'.xlsx')];
+   const id='Z-'+crypto.randomUUID().replaceAll('-','').slice(0,12),archive={'workspace.json':strToU8(JSON.stringify(op.s,null,2))};let size=0;const keys=[...op.s.batches.map(b=>'originals/'+b.id+'.xlsx'),...op.s.imports.map(i=>'originals/'+i.id+'.xlsx'),...op.s.artifacts.map(a=>'artifacts/'+a.id+'.xlsx'),...(op.s.attachments||[]).map(a=>'attachments/'+a.id)];
    for(const key of keys){const obj=await env.BUCKET.get(workspace+'/'+key);if(!obj)continue;size+=obj.size;if(size>30*1024*1024)throw new UserError('전체 백업이 30MB를 넘습니다. 결과물을 개별 다운로드해 주세요.');archive[key]=new Uint8Array(await obj.arrayBuffer());}
    op.files.set('backups/'+id+'.zip',zipSync(archive,{level:6}));const name='충무_웹업무백업_'+new Date().toISOString().slice(0,10)+'_'+id+'.zip';op.s.backups.push({id,kind:'backup',name,created:new Date().toISOString()});return {ok:true,path:'웹 파일 저장소에 백업 완료',download:'/api/files/'+id+'?workspace='+workspace};
   }));
   const result=await mutate(env,workspace,async op=>{
    if(path==='/api/attachments'){const mime=body.mime||'application/octet-stream';let raw;try{raw=atob(body.file);}catch{throw new UserError('파일 내용을 읽지 못했습니다.');}return op.addAttachment(body.name,mime,Uint8Array.from(raw,c=>c.charCodeAt(0)),body.batch_id||'',body.order_id||'',body.note||'');}
+   if(path==='/api/import-extracted'){const src=body.source?{name:String(body.source.name||'원본자료').split(/[\\/]/).pop().slice(0,180),mime:body.source.mime,bytes:base64Bytes(body.source.file)}:null;return op.importExtracted(body.headers,body.rows,body.name,body.account||'',body.day||'',body.period||'',await extractedDigest(body.headers||[],Array.isArray(body.rows)?body.rows:[]),src);}
    if(path==='/api/import-orders'){const bytes=file();return op.importOrders(bytes,body.name,body.account||'',body.day||'',body.period||'',await digest(bytes));}
    if(path==='/api/settings')return op.settings(body);if(path==='/api/order')return op.updateOrder(body.id,body);if(path==='/api/review-batch')return op.reviewBatch(body.batch_id,body.note);if(path==='/api/generate')return op.generate(body.batch_id,body.note);
    if(path==='/api/import-tracking'){const bytes=file();return op.importTracking(bytes,body.name,body.batch_id,await digest(bytes));}

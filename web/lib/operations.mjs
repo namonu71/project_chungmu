@@ -54,6 +54,10 @@ export function workbook(headers,rows,title='목록'){
  const w=XLSX.utils.book_new();XLSX.utils.book_append_sheet(w,sheet,title.slice(0,31));return new Uint8Array(XLSX.write(w,{type:'array',bookType:'xlsx',compression:true}));
 }
 
+export const attachmentTypes={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','text/plain':'.txt','text/csv':'.csv'};
+// Canonical digest of reviewed rows: re-entering the same content is detected as a duplicate.
+export const extractedDigest=async(headers,rows)=>'extracted:'+await digest(new TextEncoder().encode(JSON.stringify([headers,rows.map(r=>r.map(clean)).filter(r=>r.some(Boolean))])));
+
 export class Operations{
  constructor(state){this.s=state;this.files=new Map();}
  addAttachment(name,mime,bytes,batchId='',orderId='',note=''){
@@ -61,6 +65,21 @@ export class Operations{
   assert(/^(image\/(jpeg|png|webp|gif)|text\/(plain|csv)|application\/pdf|application\/vnd.openxmlformats-officedocument.spreadsheetml.sheet)$/.test(mime),'이미지, TXT, CSV, PDF, XLSX만 첨부할 수 있습니다.');
   assert(!batchId||this.s.batches.some(x=>x.id===batchId),'연결할 배치를 찾을 수 없습니다.');assert(!orderId||this.s.orders.some(x=>x.id===orderId),'연결할 주문을 찾을 수 없습니다.');
   const id=uid('A-');this.files.set('attachments/'+id,{bytes,mime});const item={id,name,mime,size:bytes.length,batch_id:batchId,order_id:orderId,note:clean(note).slice(0,500),created:now()};this.s.attachments??=[];this.s.attachments.push(item);this.event(orderId||null,batchId||null,'자료 첨부 등록',{파일:name,유형:mime});return {id};
+ }
+ // Orders transcribed from an image/text/CSV and reviewed on screen. The reviewed rows
+ // become an ordinary order workbook, so XLSX validation, duplicate and revision rules apply.
+ importExtracted(headers,rows,name,account,day,period,hash,source=null){
+  assert(Array.isArray(headers)&&headers.length>=1&&headers.length<=40&&headers.every(h=>typeof h==='string'&&h.length>0&&h.length<=40),'추출 결과의 열 구성을 확인하세요.');
+  assert(Array.isArray(rows)&&rows.length>=1&&rows.length<=3000,'추출된 주문 행은 1~3,000행이어야 합니다.');
+  assert(name&&String(name).length<=180,'자료 파일명을 확인하세요.');
+  const table=[];rows.forEach((row,i)=>{assert(Array.isArray(row)&&row.length===headers.length,`${i+1}번째 행의 열 수가 맞지 않습니다.`);const cells=row.map(clean);assert(cells.every(v=>v.length<=500),`${i+1}번째 행에 500자를 넘는 값이 있습니다.`);if(cells.some(Boolean))table.push(cells);});
+  assert(table.length,'입력할 주문 행이 없습니다.');
+  if(source)assert(attachmentTypes[source.mime],'원본 자료는 이미지(JPG·PNG·WEBP), TXT, CSV만 지원합니다.');
+  const result=this.importOrders(workbook(headers,table,'주문입력'),String(name),account,day,period,hash);
+  if(result.duplicate||!source)return result;
+  const {id}=this.addAttachment(source.name,source.mime,source.bytes,result.batch_id,'','주문 추출 원본'),b=this.s.batches.find(b=>b.id===result.batch_id);
+  b.metadata={...b.metadata,extracted:true,source:{id,name:source.name,mime:source.mime}};this.event(null,b.id,'원본 자료 보관',{파일:source.name,유형:source.mime});
+  return result;
  }
  event(order_id,batch_id,action,detail){this.s.events.push({id:uid('E-'),order_id,batch_id,action,detail:JSON.stringify(detail),created:now()});}
  settings(data){

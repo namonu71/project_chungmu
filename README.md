@@ -19,6 +19,7 @@ GitHub Pages 버전은 가상 주문으로 시작하는 브라우저 체험판�
 ## 주요 기능
 
 - 주문 XLSX 입력, 사업자·판매처·상품코드·옵션 매핑
+- CSV·TXT·이미지 주문 입력: 내용 추출(이미지는 브라우저 OCR) → 검토·보정 → XLSX와 같은 검수·결과물 흐름, 원본 자료 보관
 - 필수값 누락, 미매핑, 가공 의심, 박스 용량 초과 등의 보류 처리
 - 개별 및 정상 주문 일괄 검수, 수정 사유와 처리 이력 기록
 - 출고검수·품목별집계·택배등록·보류목록 XLSX 생성
@@ -46,17 +47,18 @@ GitHub Pages 버전은 가상 주문으로 시작하는 브라우저 체험판�
 
 ## PC에서 실행
 
-Python 3.11 이상에서 다음을 실행합니다.
+Windows에서는 `실행.cmd`를 더블클릭합니다. 첫 실행 때 설치된 Python 3.11 이상으로 프로젝트 가상환경(`.venv`)을 만들고 의존성을 설치합니다. `종료.cmd`로 종료하고 `테스트.cmd`로 테스트합니다. 직접 실행하려면 다음과 같습니다.
 
 ```bash
-python -m pip install -r requirements.txt
-python -m automation.launch
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt
+.venv/Scripts/python -m automation.launch
 ```
 
-브라우저에서 `http://127.0.0.1:8765`로 접속합니다. 이 프로젝트를 처음 만든 Windows PC에서는 `실행.cmd`와 `종료.cmd`도 사용할 수 있습니다.
+브라우저에서 `http://127.0.0.1:8765`로 접속합니다.
 
 ```bash
-python -m unittest discover -s automation/tests -v
+.venv/Scripts/python -m unittest discover -s automation/tests -v
 ```
 
 ## 웹 버전 개발
@@ -80,15 +82,16 @@ pnpm start
 출력된 로컬 주소로 접속합니다. 업무 테스트는 다음과 같습니다.
 
 ```bash
-node --test tests/operations.test.mjs
+node --test tests/
 ```
 
 웹 버전은 Cloudflare Worker 실행 환경을 사용하고, D1에 주문·상태·이력을, R2에 원본·결과물을 보관합니다. Sites를 통해 배포한 현재 웹사이트와 PC 앱은 자동으로 데이터를 동기화하지 않습니다.
 
 ## 검증
 
-- PC 자동 테스트 26개 통과
-- 웹 업무 로직 테스트 14개 통과
+- PC 자동 테스트 28개 통과
+- 웹 업무 로직·주문 추출 테스트 20개 통과
+- 실제 브라우저에서 이미지(OCR)·TXT 주문 입력 → 검토 → 배치 생성·원본 보관 확인 (PC 앱, 웹 로컬 실행, GitHub Pages 빌드)
 - 배포된 웹사이트에서 가상 주문 저장·조회와 XLSX 다운로드 확인
 - 중복 출고, 송장 오연결, 생성 후 변경, 실제/데모 저장소 분리 검증
 

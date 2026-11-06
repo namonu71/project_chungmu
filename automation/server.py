@@ -14,6 +14,14 @@ from .core import Store, UserError, dumps
 from .samples import template, seed_demo
 
 ROOT=Path(__file__).resolve().parent
+# OCR for image orders runs in the browser with a pinned tesseract.js build from jsDelivr.
+OCR_CDN="https://cdn.jsdelivr.net"
+
+
+def clean_name(value):
+    name=Path(str(value or "")).name.strip()
+    if not name or len(name)>180:raise UserError("자료 파일명을 확인하세요.")
+    return name
 LOG=logging.getLogger("chungmu")
 
 
@@ -39,7 +47,7 @@ def make_server(data_root, port=8765):
             self.send_header("X-Content-Type-Options","nosniff")
             self.send_header("Cache-Control","no-store")
             self.send_header("Referrer-Policy","no-referrer")
-            self.send_header("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+            self.send_header("Content-Security-Policy","default-src 'self'; script-src 'self' "+OCR_CDN+" 'wasm-unsafe-eval'; worker-src 'self' blob: "+OCR_CDN+"; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' "+OCR_CDN+"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
             if filename:self.send_header("Content-Disposition","attachment; filename*=UTF-8''"+quote(filename))
             self.end_headers()
             self.wfile.write(body)
@@ -57,14 +65,18 @@ def make_server(data_root, port=8765):
                 if path=="/":
                     html=(ROOT/"static/index.html").read_text(encoding="utf-8").replace("__TOKEN__",token)
                     return self.reply(200,html,"text/html; charset=utf-8")
-                if path in ["/app.js","/styles.css"]:
+                if path in ["/app.js","/extract.js","/styles.css"]:
                     return self.reply(200,(ROOT/"static"/path[1:]).read_bytes(),"text/javascript; charset=utf-8" if path.endswith(".js") else "text/css; charset=utf-8")
                 if path=="/favicon.ico":return self.reply(204,b"","image/x-icon")
                 if path=="/api/state":return self.reply(200,self.store().dashboard())
                 if path.startswith("/api/orders/"):
                     return self.reply(200,self.store().detail(path.rsplit("/",1)[1]))
                 if path.startswith("/api/files/"):
-                    file,name=self.store().artifact_file(path.rsplit("/",1)[1])
+                    fid=path.rsplit("/",1)[1]
+                    if fid.startswith("A-"):
+                        file,name,mime=self.store().attachment_file(fid)
+                        return self.reply(200,file.read_bytes(),mime,name)
+                    file,name=self.store().artifact_file(fid)
                     return self.reply(200,file.read_bytes(),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",name)
                 if path.startswith("/api/templates/"):
                     blob,name=template(path.rsplit("/",1)[1])
@@ -93,6 +105,8 @@ def make_server(data_root, port=8765):
                     except Exception as exc:raise UserError("파일 내용을 읽지 못했습니다.") from exc
                 if path=="/api/import-orders":
                     result=store.import_orders(fileblob(),body["name"],body.get("account",""),body.get("day",""),body.get("period",""))
+                elif path=="/api/import-extracted":
+                    result=store.import_extracted(body.get("headers"),body.get("rows"),clean_name(body.get("name")),body.get("account",""),body.get("day",""),body.get("period",""),body.get("source"))
                 elif path=="/api/settings":result=store.save_settings(body)
                 elif path=="/api/order":result=store.update_order(body["id"],body)
                 elif path=="/api/generate":result=store.generate(body["batch_id"],body.get("note",""))

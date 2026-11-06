@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-set "CHUNGMU_PYTHON=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+call "%~dp0_python.cmd" || (pause & exit /b 1)
 "%CHUNGMU_PYTHON%" -m automation.stop
 pause
