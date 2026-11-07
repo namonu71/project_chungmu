@@ -46,12 +46,12 @@ DEFAULTS={"enabled":False,"times":[],"weekdays_only":True,"rooms":[],"gmail":{"q
 
 
 def default_bridge():
-    """Google Drive 데스크톱 앱의 내 드라이브 아래 '충무자동수집'. 없으면 빈 문자열."""
-    for drive in "GHIJKLMNOPQRSTUVWXYZ":
-        for mine in ["내 드라이브","My Drive"]:
-            root=Path(f"{drive}:/{mine}")
-            if root.is_dir():return str(root/"충무자동수집")
-    return ""
+    """Google Drive 데스크톱 앱의 내 드라이브 아래 '충무자동수집'. 계정이 여럿이면 폴더가 이미 있는 드라이브를 고른다."""
+    roots=[Path(f"{d}:/{mine}") for d in "GHIJKLMNOPQRSTUVWXYZ" for mine in ["내 드라이브","My Drive"]]
+    roots=[r for r in roots if r.is_dir()]
+    for root in roots:
+        if (root/"충무자동수집").is_dir():return str(root/"충무자동수집")
+    return str(roots[0]/"충무자동수집") if roots else ""
 
 
 def base_dir(data_root):
