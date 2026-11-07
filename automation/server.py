@@ -12,6 +12,7 @@ from urllib.parse import urlparse, parse_qs, quote
 
 from .core import Store, UserError, dumps
 from .samples import template, seed_demo
+from . import flow, autocollect
 
 ROOT=Path(__file__).resolve().parent
 # OCR for image orders runs in the browser with a pinned tesseract.js build from jsDelivr.
@@ -25,11 +26,14 @@ def clean_name(value):
 LOG=logging.getLogger("chungmu")
 
 
-def make_server(data_root, port=8765):
+def make_server(data_root, port=8765, flow_root=None, scheduler=None):
     live=Store(Path(data_root)/"live")
     demo=Store(Path(data_root)/"demo")
     token=secrets.token_urlsafe(32)
+    flow_root=flow_root or flow.ROOT
     demo_lock=threading.Lock()
+    data_root=Path(data_root)
+    scheduler=scheduler or autocollect.Scheduler()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,fmt,*args):
@@ -69,6 +73,8 @@ def make_server(data_root, port=8765):
                     return self.reply(200,(ROOT/"static"/path[1:]).read_bytes(),"text/javascript; charset=utf-8" if path.endswith(".js") else "text/css; charset=utf-8")
                 if path=="/favicon.ico":return self.reply(204,b"","image/x-icon")
                 if path=="/api/state":return self.reply(200,self.store().dashboard())
+                if path=="/api/flow/status":return self.reply(200,flow.status(flow_root))
+                if path=="/api/auto":return self.reply(200,autocollect.overview(data_root,scheduler))
                 if path.startswith("/api/orders/"):
                     return self.reply(200,self.store().detail(path.rsplit("/",1)[1]))
                 if path.startswith("/api/files/"):
@@ -117,6 +123,26 @@ def make_server(data_root, port=8765):
                 elif path=="/api/demo":
                     with demo_lock:seed_demo(demo)
                     result={"ok":True,"workspace":"demo"}
+                elif path=="/api/flow/test":result=flow.FlowClient(flow_root).test()
+                elif path=="/api/flow/post":
+                    workspace=self.headers.get("X-Workspace","live")
+                    title,content=flow.compose(store.dashboard(),workspace)
+                    if body.get("preview"):result={"title":title,"content":content}
+                    else:
+                        if not body.get("confirm"):raise UserError("보내기 전에 내용을 확인하세요.")
+                        result=flow.FlowClient(flow_root).post(body.get("project_id"),title,content)
+                        LOG.info("Flow 게시 완료 (%s, 프로젝트 %s)",workspace,body.get("project_id"))
+                        result["title"]=title
+                elif path.startswith("/api/auto/"):
+                    if self.headers.get("X-Workspace","live")!="live":raise UserError("자동 수집은 실제 업무 공간에서만 사용할 수 있습니다.")
+                    if path=="/api/auto/settings":result=autocollect.save_settings(data_root,body,scheduler)
+                    elif path=="/api/auto/run":result=autocollect.start_background(data_root,"manual")
+                    elif path=="/api/auto/approve":
+                        if not body.get("confirm"):raise UserError("게시 전에 초안 내용을 확인하세요.")
+                        result=autocollect.post_draft(data_root,body.get("run_id"),flow_root);LOG.info("자동 수집 초안 게시 (%s)",body.get("run_id"))
+                    elif path=="/api/auto/sync":result={"ok":True,"synced":autocollect.sync_cloud(data_root,live)}
+                    elif path=="/api/auto/discard":result=autocollect.discard(data_root,body.get("run_id"))
+                    else:return self.reply(404,{"error":"지원하지 않는 작업입니다."})
                 elif path=="/api/backup":result={"path":str(store.backup()),"ok":True}
                 elif path=="/api/stop":
                     self.reply(200,{"ok":True})
